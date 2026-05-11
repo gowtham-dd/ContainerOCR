@@ -1,7 +1,8 @@
 """Entities sub-schema — extended with 10 entity categories"""
 
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
+from models.cargo import CargoDetails
 
 
 class EntitiesModel(BaseModel):
@@ -15,3 +16,4 @@ class EntitiesModel(BaseModel):
     urls: List[str] = []             # Website / URL references
     keywords: List[str] = []         # Key topics / technical terms
     document_type: str = ""          # e.g. "Invoice", "Resume", "Contract"
+    cargo_details: Optional[CargoDetails] = None

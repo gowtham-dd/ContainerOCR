@@ -1,7 +1,7 @@
 """
 Text Extraction Service
 Handles PDF (Google Vision API), DOCX (python-docx + LibreOffice .doc→.docx),
-and Images (Google Vision API with Tesseract fallback).
+and Images (Google Vision API).
 """
 
 import base64
@@ -17,39 +17,7 @@ from typing import Literal
 logger = logging.getLogger(__name__)
 
 
-# ── Tesseract Configuration (Production Safe) ─────────────────────────────────
 
-def _configure_tesseract():
-    """
-    Configure Tesseract for both local (Windows) and production (Linux/Render)
-    """
-    import pytesseract
-
-    # ENV override (best for production control)
-    env_path = os.environ.get("TESSERACT_CMD")
-    if env_path and os.path.exists(env_path):
-        pytesseract.pytesseract.tesseract_cmd = env_path
-        print(f"✅ Tesseract from ENV: {env_path}")
-        return
-
-    # Auto-detect (Linux / Render)
-    system_path = shutil.which("tesseract")
-    if system_path:
-        pytesseract.pytesseract.tesseract_cmd = system_path
-        print(f"✅ Tesseract auto-detected: {system_path}")
-        return
-
-    # Windows fallback
-    win_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-    if os.path.exists(win_path):
-        pytesseract.pytesseract.tesseract_cmd = win_path
-        print(f"✅ Tesseract Windows fallback: {win_path}")
-        return
-
-    print("❌ Tesseract not found. OCR fallback may fail.")
-
-
-_configure_tesseract()
 
 
 # ── Google Vision Client ──────────────────────────────────────────────────────
@@ -62,7 +30,7 @@ def _get_vision_client():
         from google.cloud import vision
         from google.oauth2 import service_account
     except ImportError:
-        raise ImportError("❌ google-cloud-vision not installed")
+        raise ImportError("[ERROR] google-cloud-vision not installed")
 
     raw_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 
@@ -74,35 +42,36 @@ def _get_vision_client():
                 info,
                 scopes=["https://www.googleapis.com/auth/cloud-platform"],
             )
-            print("✅ Google Vision: using JSON env credentials")
+            print("[INFO] Google Vision: using JSON env credentials")
             return vision.ImageAnnotatorClient(credentials=credentials)
         except Exception as e:
-            print(f"❌ Invalid GOOGLE_CREDENTIALS_JSON: {e}")
+            print(f"[ERROR] Invalid GOOGLE_CREDENTIALS_JSON: {e}")
             raise
 
-    print("⚠️ Google Vision: using default credentials (ADC)")
+    print("[WARN] Google Vision: using default credentials (ADC)")
     return vision.ImageAnnotatorClient()
 
 
 # ── PDF Extraction ────────────────────────────────────────────────────────────
 
-def _extract_pdf(data: bytes) -> str:
+def _extract_pdf(data: bytes) -> tuple[str, int]:
     try:
-        print("📄 PDF → Using Google Vision OCR")
+        print("PDF -> Using Google Vision OCR")
         return _extract_pdf_vision(data)
     except Exception as e:
         logger.warning(f"Google Vision PDF extraction failed ({e}), falling back to PyMuPDF")
-        print("⚠️ PDF → Using PyMuPDF fallback")
-        return _extract_pdf_pymupdf(data)
+        print("[WARN] PDF -> Using PyMuPDF fallback")
+        return _extract_pdf_pymupdf(data), 0
 
 
-def _extract_pdf_vision(data: bytes) -> str:
+def _extract_pdf_vision(data: bytes) -> tuple[str, int]:
     import fitz
     from google.cloud import vision
 
     client = _get_vision_client()
     doc = fitz.open(stream=data, filetype="pdf")
     pages_text = []
+    vision_units = 0
 
     for page_num, page in enumerate(doc, start=1):
         mat = fitz.Matrix(150 / 72, 150 / 72)
@@ -111,6 +80,7 @@ def _extract_pdf_vision(data: bytes) -> str:
 
         image = vision.Image(content=png_bytes)
         response = client.document_text_detection(image=image)
+        vision_units += 1
 
         if response.error.message:
             raise RuntimeError(f"Vision API error on page {page_num}: {response.error.message}")
@@ -120,7 +90,7 @@ def _extract_pdf_vision(data: bytes) -> str:
             pages_text.append(f"--- Page {page_num} ---\n{text.strip()}")
 
     doc.close()
-    return "\n\n".join(pages_text)
+    return "\n\n".join(pages_text), vision_units
 
 
 def _extract_pdf_pymupdf(data: bytes) -> str:
@@ -160,6 +130,7 @@ def _convert_doc_to_docx(doc_bytes: bytes) -> bytes:
 
 
 def _extract_docx(data: bytes, file_name: str) -> str:
+    # pyrefly: ignore [missing-import]
     from docx import Document
 
     if file_name.lower().endswith(".doc") and not file_name.lower().endswith(".docx"):
@@ -185,7 +156,7 @@ def _extract_docx(data: bytes, file_name: str) -> str:
 
 # ── Image OCR ─────────────────────────────────────────────────────────────────
 
-def _extract_image_vision(data: bytes) -> str:
+def _extract_image_vision(data: bytes) -> tuple[str, int]:
     from google.cloud import vision
 
     client = _get_vision_client()
@@ -198,41 +169,31 @@ def _extract_image_vision(data: bytes) -> str:
     text = response.full_text_annotation.text
     logger.info(f"Google Vision extracted {len(text)} chars")
 
-    print("🟢 OCR Engine: Google Vision")
+    print("[INFO] OCR Engine: Google Vision")
 
-    return text.strip()
-
-
-def _extract_image_tesseract(data: bytes) -> str:
-    import pytesseract
-    from PIL import Image
-
-    img = Image.open(io.BytesIO(data))
-    text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
-
-    print("🟡 OCR Engine: Tesseract (fallback)")
-
-    return text.strip()
+    return text.strip(), 1
 
 
-def _extract_image(data: bytes) -> str:
+
+
+
+def _extract_image(data: bytes) -> tuple[str, int]:
     for attempt in range(2):
         try:
-            print(f"🔵 Trying Google Vision (Attempt {attempt+1})")
+            print(f"Trying Google Vision (Attempt {attempt+1})")
 
-            text = _extract_image_vision(data)
+            text, units = _extract_image_vision(data)
 
             if len(text) < 10:
                 raise ValueError("Too little text")
 
-            return text
+            return text, units
 
         except Exception as e:
             logger.warning(f"Vision attempt {attempt+1} failed: {e}")
             time.sleep(1)
 
-    print("🟡 Falling back to Tesseract")
-    return _extract_image_tesseract(data)
+    raise RuntimeError("All Google Vision attempts failed. No fallback available.")
 
 
 # ── Public Interface ──────────────────────────────────────────────────────────
@@ -241,7 +202,7 @@ def extract_text(
     file_name: str,
     file_type: Literal["pdf", "docx", "image"],
     file_base64: str,
-) -> str:
+) -> tuple[str, int]:
 
     if "," in file_base64:
         file_base64 = file_base64.split(",", 1)[1]
@@ -255,7 +216,7 @@ def extract_text(
     if file_type == "pdf":
         return _extract_pdf(data)
     elif file_type == "docx":
-        return _extract_docx(data, file_name)
+        return _extract_docx(data, file_name), 0
     elif file_type == "image":
         return _extract_image(data)
     else:

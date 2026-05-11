@@ -11,9 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 
-from routers.analyze import router as analyze_router
-
 load_dotenv()
+
+from routers.analyze import router as analyze_router
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(

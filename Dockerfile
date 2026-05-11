@@ -2,8 +2,7 @@ FROM python:3.11-slim
 
 # ── System dependencies ────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    tesseract-ocr-eng \
+
     libreoffice \
     libgl1 \
     libglib2.0-0 \

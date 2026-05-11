@@ -1,6 +1,6 @@
 # DocuSense — AI Document Analyzer API
 
-> **Hackathon Track 2** · FastAPI · Groq LLaMA-3.3-70B · Monte Carlo consensus · Google Vision API · Tesseract fallback · python-docx
+> **Hackathon Track 2** · FastAPI · Groq LLaMA-3.3-70B · Monte Carlo consensus · Google Vision API · python-docx
 
 ---
 
@@ -29,7 +29,6 @@ Request (File Upload — PDF / DOCX / Image)
 │           └─ Fallback: PyMuPDF text extraction               │
 │  DOCX  → python-docx  (.doc auto-converted via LibreOffice)  │
 │  Image → Google Vision API (document_text_detection)        │
-│           └─ Fallback: Tesseract OCR                         │
 └──────────┬───────────────────────────────────────────────────┘
            │
            ▼
@@ -73,7 +72,7 @@ Single LLM calls are stochastic. Running multiple passes at varying temperatures
 | PDF Fallback | PyMuPDF (fitz) |
 | DOCX Extraction | python-docx |
 | .doc Conversion | LibreOffice headless |
-| Image OCR | Google Vision API (primary) · Tesseract (fallback) |
+| Image OCR | Google Vision API |
 | Deployment | Render (Docker runtime) |
 | Validation | Pydantic v2 |
 
@@ -85,7 +84,7 @@ Single LLM calls are stochastic. Running multiple passes at varying temperatures
 doc-analyzer/
 ├── main.py                    # FastAPI app entry point
 ├── requirements.txt           # Python dependencies
-├── Dockerfile                 # Container build (Tesseract + LibreOffice + Python 3.11)
+├── Dockerfile                 # Container build (LibreOffice + Python 3.11)
 ├── render.yaml                # Render deployment config (Docker runtime)
 ├── README.md
 │

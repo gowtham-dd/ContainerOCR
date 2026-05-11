@@ -95,12 +95,12 @@ async def document_analyze(
     file_base64 = base64.b64encode(file_bytes).decode("utf-8")
 
     # ── Step 1: Extract text ───────────────────────────────────────────────────
-    raw_text = extract_text(filename, file_type, file_base64)
+    raw_text, vision_units = extract_text(filename, file_type, file_base64)
 
     if not raw_text.strip():
         raise HTTPException(status_code=422, detail="Could not extract any text from the document.")
 
     # ── Step 2: AI pipeline ────────────────────────────────────────────────────
-    result = await run_analysis(raw_text, filename)
+    result = await run_analysis(raw_text, filename, vision_units=vision_units)
 
     return result
