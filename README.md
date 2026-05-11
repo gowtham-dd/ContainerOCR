@@ -5,52 +5,10 @@
 ---
 
 ## 🚀 Live Demo
-- **API:** `https://buildbridgehackathon.onrender.com/api/document-analyze`
-- **Web UI:** `https://buildbridgehackathon.onrender.com/`
 - **Swagger Docs:** `https://buildbridgehackathon.onrender.com/docs`
-
 ---
 
-## 📐 Architecture & Approach
-
-```
-Request (File Upload — PDF / DOCX / Image)
-        │
-        ▼
-┌──────────────────────┐
-│   Auth Middleware    │  x-api-key header validation
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    Extraction Layer                          │
-│                                                              │
-│  PDF   → Google Vision API (pages rendered as PNG → OCR)    │
-│           └─ Fallback: PyMuPDF text extraction               │
-│  DOCX  → python-docx  (.doc auto-converted via LibreOffice)  │
-│  Image → Google Vision API (document_text_detection)        │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────┐
-│               Monte Carlo AI Pipeline                        │
-│                                                              │
-│  Small docs  → 3 Groq LLaMA-3.3-70B passes                  │
-│                Temperature ladder: [0.0, 0.2, 0.4]          │
-│  Large docs  → 1 pass per chunk (4000 chars, 200 overlap)    │
-│                                                              │
-│  Aggregation:                                                │
-│    summary      → most detailed across runs                 │
-│    key_points   → union across chunks, deduplicated         │
-│    cargo_details→ field-level merging and validation         │
-│    document_type→ majority vote                             │
-└──────────┬───────────────────────────────────────────────────┘
-           │
-           ▼
-    Structured JSON response (Cargo + Containers)
-```
-
-### Why Monte Carlo?
+## Why Monte Carlo?
 Single LLM calls are stochastic, especially with complex logistics forms. Running multiple passes at varying temperatures:
 - **Cargo Fields** — field-level merging ensures high accuracy for B/L and Container numbers
 - **Reliability** — majority vote reduces single-pass hallucinations of dates and weights
@@ -73,37 +31,6 @@ Single LLM calls are stochastic, especially with complex logistics forms. Runnin
 | Image OCR | Google Vision API |
 | Deployment | Render (Docker runtime) |
 | Validation | Pydantic v2 |
-
----
-
-## 📁 Project Structure
-
-```
-doc-analyzer/
-├── main.py                    # FastAPI app entry point
-├── requirements.txt           # Python dependencies
-├── Dockerfile                 # Container build (LibreOffice + Python 3.11)
-├── render.yaml                # Render deployment config (Docker runtime)
-├── README.md
-│
-├── routers/
-│   └── analyze.py             # POST /api/document-analyze + auth + file upload
-│
-├── models/
-│   ├── request.py             # (legacy — endpoint now uses UploadFile directly)
-│   ├── response.py            # AnalyzeResponse schema
-│   └── entities.py            # EntitiesModel — 10 entity categories
-│
-├── services/
-│   ├── extractor.py           # PDF / DOCX / Image extraction (Google Vision)
-│   └── ai_pipeline.py         # Monte Carlo LLM orchestration + chunking + aggregation
-│
-├── prompts/
-│   └── analysis_prompt.py     # System + user prompt builders
-│
-└── static/
-    └── index.html             # Web UI (Chart.js — doughnut + bar charts + entity grid)
-```
 
 ---
 
@@ -218,47 +145,6 @@ Accepts a file directly as **multipart/form-data** — no base64 encoding needed
 
 ---
 
-## 🧪 Testing the API with Postman
-
-### Step 1 — Create a new request
-- Method: **POST**
-- URL: `https://buildbridgehackathon.onrender.com/api/document-analyze`
-
-### Step 2 — Add the API key header
-Go to the **Headers** tab and add:
-
-| Key | Value |
-|---|---|
-| `x-api-key` | `mysecretkey123` |
-
-### Step 3 — Attach your file
-Go to **Body** tab → select **form-data**
-
-Add a row:
-
-| Key | Type | Value |
-|---|---|---|
-| `file` | **File** ← change the dropdown from Text to File | click Select Files → pick your document |
-
-> ⚠️ The Type column defaults to `Text` — you **must** switch it to **File** or the upload won't work.
-
-### Step 4 — Hit Send
-
-You will get back a full JSON response with summary, key points, cargo/container details, and document type.
-
----
-
-## 🌐 Testing via Swagger UI
-
-Visit [`https://buildbridgehackathon.onrender.com/docs`](https://buildbridgehackathon.onrender.com/docs) in your browser.
-
-1. Click `POST /api/document-analyze` → **Try it out**
-2. Enter `mysecretkey123` in the `x-api-key` field
-3. Click **Choose File** and select your document
-4. Click **Execute**
-
----
-
 ## 📦 Extracted Cargo Fields
 
 | Field | Description |
@@ -277,52 +163,3 @@ Visit [`https://buildbridgehackathon.onrender.com/docs`](https://buildbridgehack
 Plus `document_type` (Bill of Lading / Invoice / Packing List) and a high-level `summary`.
 
 ---
-
-## 🖥 Web UI
-
-Visit [`https://buildbridgehackathon.onrender.com`](https://buildbridgehackathon.onrender.com) for the visual interface.
-
-- Drag & drop or browse to upload any supported file
-- Enter `mysecretkey123` in the API Key field
-- Visualizations include:
-  - **Cargo Summary** — Quick overview of shipper, consignee, and vessel
-  - **Container Grid** — Detailed list of all containers, seals, and weights
-  - **Key points** — numbered bullet findings from the document
-  - **Raw JSON toggle** — view the full API response inline
-
----
-
-## ⚙️ Environment Variables
-
-| Variable | Description |
-|---|---|
-| `GROQ_API_KEY` | Your key from [console.groq.com](https://console.groq.com) |
-| `API_KEY` | Secret key for endpoint auth (`mysecretkey123`) |
-| `GOOGLE_CREDENTIALS_JSON` | Full JSON string from your GCP service account key file |
-| `MC_RUNS` | Monte Carlo passes for small docs (default: `3`) |
-| `CHUNK_SIZE` | Characters per chunk for large docs (default: `4000`) |
-| `CHUNK_OVERLAP` | Overlap between chunks (default: `200`) |
-| `CALL_DELAY` | Seconds between Groq calls to avoid rate limits (default: `3.0`) |
-
----
-
-## 🧪 Running Tests Locally
-
-### Unit tests (no API key required)
-```bash
-pytest tests/test_unit.py -v
-```
-
-### Full eval suite
-```bash
-# Against the live deployed URL
-python tests/test_api.py --url https://buildbridgehackathon.onrender.com --key mysecretkey123
-```
-
-Results saved to `test_report.json` with per-test scoring breakdown.
-
----
-
-## 🌍 Language Support
-
-Google Vision API auto-detects the document language — no configuration needed. Supports 100+ languages including Tamil, Hindi, Telugu, Arabic, Chinese, Japanese, French, German and more. The API response (summary, entities, key points) is always returned in **English** regardless of the source document language. The `language` field in the response indicates what language the original document was written in.
