@@ -1,6 +1,6 @@
-# DocuSense — AI Document Analyzer API
+# BuildBridge — Logistics Document AI
 
-> **Hackathon Track 2** · FastAPI · Groq LLaMA-3.3-70B · Monte Carlo consensus · Google Vision API · python-docx
+> **Logistics AI** · FastAPI · Groq LLaMA-3.3-70B · Google Vision API · Cargo/Container Extraction
 
 ---
 
@@ -40,23 +40,21 @@ Request (File Upload — PDF / DOCX / Image)
 │  Large docs  → 1 pass per chunk (4000 chars, 200 overlap)    │
 │                                                              │
 │  Aggregation:                                                │
-│    summary      → longest / most detailed across runs       │
+│    summary      → most detailed across runs                 │
 │    key_points   → union across chunks, deduplicated         │
-│    sentiment    → majority vote                             │
-│    entities     → union across all runs / chunks            │
+│    cargo_details→ field-level merging and validation         │
 │    document_type→ majority vote                             │
-│    language     → majority vote                             │
 └──────────┬───────────────────────────────────────────────────┘
            │
            ▼
-    Structured JSON response (10 entity types)
+    Structured JSON response (Cargo + Containers)
 ```
 
 ### Why Monte Carlo?
-Single LLM calls are stochastic. Running multiple passes at varying temperatures:
-- **Sentiment** — majority vote reduces single-pass hallucination
-- **Entities** — union across runs ensures nothing is missed
-- **Summary** — most detailed successful output is selected
+Single LLM calls are stochastic, especially with complex logistics forms. Running multiple passes at varying temperatures:
+- **Cargo Fields** — field-level merging ensures high accuracy for B/L and Container numbers
+- **Reliability** — majority vote reduces single-pass hallucinations of dates and weights
+- **Summary** — the most detailed successful output is selected
 - **Large docs** — chunked processing means no page is ever truncated or skipped
 
 ---
@@ -109,6 +107,49 @@ doc-analyzer/
 
 ---
 
+## 🛠 Local Setup
+
+Follow these steps to get the project running on your local machine:
+
+### 1. Create a Virtual Environment
+```bash
+# Windows
+python -m venv venv
+
+# macOS/Linux
+python3 -m venv venv
+```
+
+### 2. Activate the Virtual Environment
+```bash
+# Windows
+venv\Scripts\activate
+
+# macOS/Linux
+source venv/bin/activate
+```
+
+### 3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Configure Environment Variables
+Create a `.env` file in the root directory (you can copy `.env.example` as a template) and add your keys:
+```env
+GROQ_API_KEY=your_groq_key
+API_KEY=mysecretkey123
+GOOGLE_APPLICATION_CREDENTIALS=path/to/your/gcp-key.json
+```
+
+### 5. Run the Application
+```bash
+uvicorn main:app --reload
+```
+The API will be available at `http://127.0.0.1:8000`.
+
+---
+
 ## 🔌 API Reference
 
 ### `POST /api/document-analyze`
@@ -131,27 +172,37 @@ Accepts a file directly as **multipart/form-data** — no base64 encoding needed
 ```json
 {
   "status": "success",
-  "fileName": "invoice.pdf",
-  "document_type": "Invoice",
-  "language": "English",
-  "summary": "This document is an invoice from Acme Corp...",
+  "fileName": "bill_of_lading.pdf",
+  "document_type": "Bill of Lading",
+  "summary": "This document is a Bill of Lading for shipping...",
   "key_points": [
-    "Total invoice amount is $12,500 due by 15 February 2024",
-    "Services rendered include software development and consulting",
-    "Payment terms specify a 15-day settlement window"
+    "Vessel: EVER GIVEN Voyage: 064W",
+    "Port of Loading: Shanghai, China",
+    "Port of Discharge: Rotterdam, Netherlands"
   ],
-  "entities": {
-    "names": ["John Smith", "Priya Rajan"],
-    "organizations": ["Acme Corp", "Tech Solutions Ltd"],
-    "locations": ["New York, NY", "San Francisco"],
-    "dates": ["2024-01-15", "Q1 2024"],
-    "amounts": ["$12,500.00"],
-    "emails": ["john@acmecorp.com"],
-    "phones": ["+1-800-555-0199"],
-    "urls": ["www.acmecorp.com"],
-    "keywords": ["invoice", "software development", "consulting", "payment terms"]
+  "cargo_details": {
+    "bill_of_lading_number": "MAEU123456789",
+    "shipper": "Global Trading Co.",
+    "consignee": "Retail Logistics Ltd.",
+    "vessel": "EVER GIVEN",
+    "voyage": "064W",
+    "port_of_loading": "Shanghai",
+    "port_of_discharge": "Rotterdam",
+    "total_gross_weight": "24,500 KG",
+    "containers": [
+      {
+        "container_number": "MSKU9876543",
+        "seal_number": "SL123456",
+        "type": "40' HIGH CUBE",
+        "gross_weight": "24,500 KG",
+        "description": "Electronics and machinery parts"
+      }
+    ]
   },
-  "sentiment": "neutral"
+  "usage": {
+    "vision_units": 1,
+    "total_cost": 0.015
+  }
 }
 ```
 
@@ -193,7 +244,7 @@ Add a row:
 
 ### Step 4 — Hit Send
 
-You will get back a full JSON response with summary, key points, 10 entity categories, sentiment, document type, and detected language.
+You will get back a full JSON response with summary, key points, cargo/container details, and document type.
 
 ---
 
@@ -208,21 +259,22 @@ Visit [`https://buildbridgehackathon.onrender.com/docs`](https://buildbridgehack
 
 ---
 
-## 🏷 Extracted Entities — All 10 Categories
+## 📦 Extracted Cargo Fields
 
-| Entity | What it extracts |
+| Field | Description |
 |---|---|
-| `names` | Full person names (e.g. "Dr. John Smith") |
-| `organizations` | Companies, universities, institutions, brands |
-| `locations` | Cities, states, countries, addresses |
-| `dates` | All date and time references |
-| `amounts` | Monetary values with currency symbols |
-| `emails` | Email addresses |
-| `phones` | Phone, mobile, fax numbers |
-| `urls` | Websites, domains, social handles |
-| `keywords` | Top 5–10 domain-specific terms or topics |
+| `bill_of_lading_number` | The unique B/L or tracking number |
+| `shipper` | The company sending the goods |
+| `consignee` | The company receiving the goods |
+| `vessel / voyage` | Vessel name and voyage identification |
+| `ports` | Port of Loading and Port of Discharge |
+| `containers` | List of all containers found in the document |
+| `container_number` | Standard 4-letter + 7-digit container ID |
+| `seal_number` | Security seal identifier |
+| `type` | Container size/type (e.g., 20' Dry, 40' HC) |
+| `gross_weight` | Total weight including packaging |
 
-Plus `document_type` (Invoice / Resume / Contract / Report etc.) and `language` at the top level.
+Plus `document_type` (Bill of Lading / Invoice / Packing List) and a high-level `summary`.
 
 ---
 
@@ -233,9 +285,8 @@ Visit [`https://buildbridgehackathon.onrender.com`](https://buildbridgehackathon
 - Drag & drop or browse to upload any supported file
 - Enter `mysecretkey123` in the API Key field
 - Visualizations include:
-  - **Sentiment doughnut chart** — positive / neutral / negative weighting
-  - **Entity distribution bar chart** — count across all 9 entity types
-  - **Entity grid** — colour-coded tags for every extracted entity
+  - **Cargo Summary** — Quick overview of shipper, consignee, and vessel
+  - **Container Grid** — Detailed list of all containers, seals, and weights
   - **Key points** — numbered bullet findings from the document
   - **Raw JSON toggle** — view the full API response inline
 
